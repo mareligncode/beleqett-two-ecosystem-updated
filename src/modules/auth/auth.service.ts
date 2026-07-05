@@ -11,6 +11,7 @@ import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { QUEUE_NAMES, NOTIFICATION_JOBS } from '../queues/queues.constants';
 import { passwordResetEmail, verificationEmail, loginAlertEmail, logoutAlertEmail, welcomeEmail } from '../notifications/email-templates';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 @Injectable()
 export class AuthService {
@@ -21,6 +22,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     @InjectQueue(QUEUE_NAMES.NOTIFICATIONS) private readonly notificationsQueue: Queue,
+    private readonly eventEmitter: EventEmitter2,
   ) { }
 
   async register(dto: RegisterDto) {
@@ -71,11 +73,18 @@ export class AuthService {
 
   async validateUser(email: string, password: string) {
     const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
-    if (!user || !user.isActive) throw new UnauthorizedException('Invalid credentials');
+    if (!user || !user.isActive) {
+      this.eventEmitter.emit('auth.login.failed', { email, timestamp: new Date().toISOString() });
+      throw new UnauthorizedException('Invalid credentials');
+    }
 
     const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) throw new UnauthorizedException('Invalid credentials');
+    if (!valid) {
+      this.eventEmitter.emit('auth.login.failed', { email, timestamp: new Date().toISOString() });
+      throw new UnauthorizedException('Invalid credentials');
+    }
 
+    this.eventEmitter.emit('auth.login.success', { email, timestamp: new Date().toISOString() });
     return user;
   }
 
