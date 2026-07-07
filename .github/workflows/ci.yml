@@ -65,6 +65,10 @@ jobs:
           BULL_BOARD_USERNAME=admin
           BULL_BOARD_PASSWORD=ci_board_password
           OPENAI_API_KEY=sk-test-dummy-key-for-ci
+          STRIPE_SECRET_KEY=sk_test_dummy
+          STRIPE_WEBHOOK_SECRET=whsec_dummy
+          PAYPAL_CLIENT_ID=dummy_client_id
+          PAYPAL_CLIENT_SECRET=dummy_client_secret
           EOF
 
       - run: npx prisma generate
@@ -129,6 +133,10 @@ jobs:
           BULL_BOARD_USERNAME=admin
           BULL_BOARD_PASSWORD=ci_board_password
           OPENAI_API_KEY=sk-test-dummy-key-for-ci
+          STRIPE_SECRET_KEY=sk_test_dummy
+          STRIPE_WEBHOOK_SECRET=whsec_dummy
+          PAYPAL_CLIENT_ID=dummy_client_id
+          PAYPAL_CLIENT_SECRET=dummy_client_secret
           EOF
 
       - run: npx prisma generate
