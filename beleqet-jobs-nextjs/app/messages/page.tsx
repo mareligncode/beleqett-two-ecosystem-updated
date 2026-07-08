@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSocket, useSocketEvent } from '@/hooks/useSocket';
 import { getToken } from '@/lib/auth';
 
@@ -14,10 +14,14 @@ import { getToken } from '@/lib/auth';
  * connection status visibly to the user.
  */
 export default function MessagesPage() {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '') ?? 'http://localhost:4000';
-  const token = getToken();
-
-  const { socket, status } = useSocket({
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '') ?? 'http://localhost:4000';
+    const [token, setToken] = useState<string | null | undefined>(undefined);
+  
+    useEffect(() => {
+      setToken(getToken());
+    }, []);
+  
+    const { socket, status } = useSocket({
     url: apiUrl,
     token: token ?? undefined,
     namespace: '/chat',
@@ -47,7 +51,7 @@ export default function MessagesPage() {
         <span className="text-sm text-gray-600 capitalize">{status}</span>
       </div>
 
-      {!token && (
+      {token === null && (
         <p className="text-sm text-amber-600 mb-4">
           You are not logged in — connection will be rejected by the server&apos;s JWT check.
           Log in first to see a successful connection.

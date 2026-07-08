@@ -70,6 +70,12 @@ export class RedisIoAdapter extends IoAdapter {
       this.logger.error(`[RedisIoAdapter] Sub client error: ${err.message}`),
     );
 
+    // Fail fast on startup if Redis is unreachable, rather than silently
+    // booting with a WebSocket layer that can never actually sync state
+    // across instances. A misconfigured/unreachable Redis should stop
+    // the app from starting, not degrade it invisibly.
+    await this.pubClient.ping();
+
     this.adapterConstructor = createAdapter(this.pubClient, this.subClient);
     this.logger.log('[RedisIoAdapter] Connected — WebSocket state synced via Redis Pub/Sub');
   }

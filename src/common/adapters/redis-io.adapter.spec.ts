@@ -4,12 +4,13 @@ import { RedisIoAdapter } from './redis-io.adapter';
 
 // Mock ioredis so tests never attempt a real network connection
 jest.mock('ioredis', () => {
-    const mockRedis = jest.fn().mockImplementation(() => ({
-      on: jest.fn(),
-      duplicate: jest.fn().mockReturnThis(),
-    }));
-    return { __esModule: true, default: mockRedis };
-  });
+  const mockRedis = jest.fn().mockImplementation(() => ({
+    on: jest.fn(),
+    duplicate: jest.fn().mockReturnThis(),
+    ping: jest.fn().mockResolvedValue('PONG'),
+  }));
+  return { __esModule: true, default: mockRedis };
+});
 
 // Mock @socket.io/redis-adapter so we don't depend on its real implementation
 jest.mock('@socket.io/redis-adapter', () => ({
