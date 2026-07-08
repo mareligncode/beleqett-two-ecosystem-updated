@@ -167,7 +167,12 @@ export class TwoFactorController {
     }
 
     if (payload.action && payload.action !== 'sensitive_action') {
-      if (dto.action && payload.action !== dto.action) {
+      if (!dto.action) {
+        throw new BadRequestException(
+          `Challenge token is scoped to action "${payload.action}" but request did not specify an action`,
+        );
+      }
+      if (payload.action !== dto.action) {
         throw new BadRequestException(
           `Challenge token scoped to action "${payload.action}" but request specified "${dto.action}"`,
         );
@@ -179,7 +184,11 @@ export class TwoFactorController {
       }
     }
 
-    const stepUpToken = await this.svc.verifyStepUp(payload.sub, dto.code);
+    const stepUpToken = await this.svc.verifyStepUp(
+      payload.sub, dto.code,
+      payload.action !== 'sensitive_action' ? payload.action : undefined,
+      payload.resourceId,
+    );
 
     return { stepUpToken };
   }
@@ -246,7 +255,11 @@ export class TwoFactorController {
       throw new UnauthorizedException('Token does not match current user');
     }
 
-    await this.svc.verifyStepUp(user.userId, dto.code);
+    await this.svc.verifyStepUp(
+      user.userId, dto.code,
+      payload.action !== 'sensitive_action' ? payload.action : undefined,
+      payload.resourceId,
+    );
     const codes = await this.svc.regenerateBackupCodes(user.userId);
 
     return { backupCodes: codes };

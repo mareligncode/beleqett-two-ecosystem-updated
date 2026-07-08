@@ -18,7 +18,6 @@ import Redis from 'ioredis';
 const ENROLLMENT_TOKEN_EXPIRY = 10 * 60;
 const STEP_UP_TEMP_EXPIRY = 5 * 60;
 const STEP_UP_VERIFIED_EXPIRY = 15 * 60;
-const TOTP_STEP_SECONDS = 30;
 const REPLAY_KEY_TTL_MS = 90_000;
 
 const KEY_PREFIX = '2fa:used';
@@ -68,16 +67,13 @@ export class TwoFactorService {
     }
   }
 
-  private getCurrentTimeStep(): number {
-    return Math.floor(Date.now() / (TOTP_STEP_SECONDS * 1000));
-  }
-
   /** Check replay via Redis SETNX — atomic set-if-not-exists with TTL.
-   *  Key format: `2fa:used:{userId}:{timeStep}:{code}` (90s TTL).
+   *  Key format: `2fa:used:{userId}:{code}` (90s TTL).
+   *  The timeStep is intentionally omitted so that a valid code from any
+   *  drift-accepted window cannot be replayed in a subsequent window.
    *  Returns false if the key already exists (replay detected). */
   private async checkReplay(userId: string, code: string): Promise<boolean> {
-    const timeStep = this.getCurrentTimeStep();
-    const key = `${KEY_PREFIX}:${userId}:${timeStep}:${code}`;
+    const key = `${KEY_PREFIX}:${userId}:${code}`;
     const result = await this.redis.set(key, '1', 'PX', REPLAY_KEY_TTL_MS, 'NX');
     return result === 'OK';
   }
@@ -223,8 +219,10 @@ export class TwoFactorService {
   }
 
   /** Verify a TOTP code for step-up authentication on sensitive actions.
-   *  On success, returns a short-lived step-up JWT with a `2fa_verified_at` claim. */
-  async verifyStepUp(userId: string, code: string): Promise<string> {
+   *  On success, returns a short-lived step-up JWT with a `2fa_verified_at` claim.
+   *  If an action scope was requested in the challenge, it is carried into the
+   *  verified token so that StepUpGuard can enforce action-level authorization. */
+  async verifyStepUp(userId: string, code: string, action?: string, resourceId?: string): Promise<string> {
     const record = await this.prisma.userTwoFactor.findUnique({
       where: { userId },
     });
@@ -251,12 +249,15 @@ export class TwoFactorService {
       data: { lastVerifiedAt: new Date() },
     });
 
-    const stepUpToken = this.jwt.sign(
-      {
-        sub: userId,
-        purpose: '2fa_step_up',
-        '2fa_verified_at': Math.floor(Date.now() / 1000),
-      },
+    const tokenClaims: Record<string, any> = {
+      sub: userId,
+      purpose: '2fa_step_up',
+      '2fa_verified_at': Math.floor(Date.now() / 1000),
+    };
+    if (action) tokenClaims.action = action;
+    if (resourceId) tokenClaims.resourceId = resourceId;
+
+    const stepUpToken = this.jwt.sign(tokenClaims,
       { secret: this.tempSecret, expiresIn: STEP_UP_VERIFIED_EXPIRY },
     );
 

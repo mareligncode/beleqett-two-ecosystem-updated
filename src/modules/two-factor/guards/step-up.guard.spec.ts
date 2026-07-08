@@ -68,6 +68,13 @@ describe('StepUpGuard', () => {
     } as any;
   });
 
+  function mockReflectorForSensitiveOnly() {
+    jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key: string) => {
+      if (key === SENSITIVE_ACTION_KEY) return true;
+      return undefined;
+    });
+  }
+
   it('should be defined', () => {
     expect(guard).toBeDefined();
   });
@@ -78,13 +85,13 @@ describe('StepUpGuard', () => {
   });
 
   it('should reject sensitive route with no auth header', async () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(true);
+    mockReflectorForSensitiveOnly();
     mockRequest.headers = {};
     await expect(guard.canActivate(mockContext)).rejects.toThrow();
   });
 
   it('should reject sensitive route with invalid token', async () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(true);
+    mockReflectorForSensitiveOnly();
     jest.spyOn(jwtService, 'verify').mockImplementation(() => {
       throw new Error('invalid');
     });
@@ -92,15 +99,16 @@ describe('StepUpGuard', () => {
     await expect(guard.canActivate(mockContext)).rejects.toThrow();
   });
 
-  it('should return true with valid step-up token', async () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(true);
+  it('should return true with valid step-up token and set request.user', async () => {
+    mockReflectorForSensitiveOnly();
     jest.spyOn(jwtService, 'verify').mockReturnValue(validStepUpPayload);
     mockRequest.headers = { authorization: 'Bearer valid-step-up-token' };
     await expect(guard.canActivate(mockContext)).resolves.toBe(true);
+    expect(mockRequest.user).toEqual({ userId: 'user-1' });
   });
 
   it('should throw with expired step-up token', async () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(true);
+    mockReflectorForSensitiveOnly();
     jest.spyOn(jwtService, 'verify').mockReturnValue({
       ...validStepUpPayload,
       '2fa_verified_at': Math.floor(Date.now() / 1000) - 1800,
@@ -110,8 +118,36 @@ describe('StepUpGuard', () => {
     await expect(guard.canActivate(mockContext)).rejects.toThrow();
   });
 
+  it('should reject step-up token with mismatched action scope', async () => {
+    jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key: string) => {
+      if (key === SENSITIVE_ACTION_KEY) return true;
+      if (key === 'action_type') return 'milestone_release';
+      return undefined;
+    });
+    jest.spyOn(jwtService, 'verify').mockReturnValue({
+      ...validStepUpPayload,
+      action: 'wallet_withdraw',
+    });
+    mockRequest.headers = { authorization: 'Bearer scoped-step-up-token' };
+    await expect(guard.canActivate(mockContext)).rejects.toThrow();
+  });
+
+  it('should pass step-up token when action scope matches route', async () => {
+    jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key: string) => {
+      if (key === SENSITIVE_ACTION_KEY) return true;
+      if (key === 'action_type') return 'wallet_withdraw';
+      return undefined;
+    });
+    jest.spyOn(jwtService, 'verify').mockReturnValue({
+      ...validStepUpPayload,
+      action: 'wallet_withdraw',
+    });
+    mockRequest.headers = { authorization: 'Bearer scoped-step-up-token' };
+    await expect(guard.canActivate(mockContext)).resolves.toBe(true);
+  });
+
   it('should return challenge when access token has no step-up and 2FA enabled', async () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(true);
+    mockReflectorForSensitiveOnly();
 
     let callCount = 0;
     jest.spyOn(jwtService, 'verify').mockImplementation(() => {
@@ -127,7 +163,7 @@ describe('StepUpGuard', () => {
   });
 
   it('should pass when access token has no step-up and 2FA disabled', async () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(true);
+    mockReflectorForSensitiveOnly();
 
     let callCount = 0;
     jest.spyOn(jwtService, 'verify').mockImplementation(() => {
@@ -143,7 +179,7 @@ describe('StepUpGuard', () => {
   });
 
   it('should pass when access token has no step-up and no 2FA record', async () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(true);
+    mockReflectorForSensitiveOnly();
 
     let callCount = 0;
     jest.spyOn(jwtService, 'verify').mockImplementation(() => {

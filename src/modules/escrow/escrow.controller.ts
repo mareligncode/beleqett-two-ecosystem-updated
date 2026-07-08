@@ -80,7 +80,7 @@ export class EscrowController {
 
   @Post('milestones/:id/release')
   @UseGuards(JwtAuthGuard, StepUpGuard)
-  @SensitiveAction()
+  @SensitiveAction('milestone_release')
   @ApiBearerAuth()
   release(@Param('id') id: string, @CurrentUser() u: CurrentUserPayload) {
     return this.svc.releaseMilestone(id, u.userId);

@@ -162,12 +162,11 @@ a different action.
 Replay attacks are prevented using Redis `SET` with `NX` (set if not exists) and a 90-second TTL:
 
 ```
-2fa:used:{userId}:{timeStep}:{code} → 1 (TTL: 90s)
+2fa:used:{userId}:{code} → 1 (TTL: 90s)
 ```
 
-- The time step is `floor(now / 30)` (TOTP window)
-- A code that was already used within the same 30-second window is rejected
-- 90-second TTL safely covers clock drift (3 TOTP windows)
+- The key binds the code to the user without a timeStep, so a code accepted within otplib's drift window cannot be replayed in a subsequent window
+- 90-second TTL safely covers clock drift
 - Works correctly across multiple server instances
 - No manual cleanup needed (TTL handles expiry)
 

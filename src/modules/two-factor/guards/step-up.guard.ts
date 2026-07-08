@@ -3,13 +3,14 @@ import {
   CanActivate,
   ExecutionContext,
   UnauthorizedException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { SENSITIVE_ACTION_KEY } from '../decorators/sensitive-action.decorator';
+import { SENSITIVE_ACTION_KEY, ACTION_TYPE_KEY } from '../decorators/sensitive-action.decorator';
 
 const STEP_UP_WINDOW_MINUTES = 15;
 const STEP_UP_TEMP_EXPIRY = 5;
@@ -59,28 +60,17 @@ export class StepUpGuard implements CanActivate {
     if (stepUpHeader) {
       const stepUpPayload = this.tryVerifyStepUp(stepUpHeader);
       if (stepUpPayload) {
-        const now = Math.floor(Date.now() / 1000);
-        if (now - stepUpPayload['2fa_verified_at'] > STEP_UP_WINDOW_MINUTES * 60) {
-          throw new UnauthorizedException({
-            requiresStepUp: true,
-            message: 'Step-up verification has expired. Please re-verify.',
-            stepUpToken: this.generateStepUpChallenge(request.user?.userId),
-          });
-        }
+        this.validateStepUpExpiry(request, stepUpPayload);
+        this.validateActionScope(context, stepUpPayload);
         return true;
       }
     }
 
     const stepUpPayload = this.tryVerifyStepUp(token);
     if (stepUpPayload) {
-      const now = Math.floor(Date.now() / 1000);
-      if (now - stepUpPayload['2fa_verified_at'] > STEP_UP_WINDOW_MINUTES * 60) {
-        throw new UnauthorizedException({
-          requiresStepUp: true,
-          message: 'Step-up verification has expired. Please re-verify.',
-          stepUpToken: this.generateStepUpChallenge(request.user?.userId),
-        });
-      }
+      this.validateStepUpExpiry(request, stepUpPayload);
+      this.validateActionScope(context, stepUpPayload);
+      request.user = { userId: stepUpPayload.sub };
       return true;
     }
 
@@ -112,6 +102,33 @@ export class StepUpGuard implements CanActivate {
       message: 'This action requires recent two-factor verification. Please re-verify.',
       stepUpToken: this.generateStepUpChallenge(userId),
     });
+  }
+
+  private validateStepUpExpiry(request: any, payload: Record<string, any>): void {
+    const now = Math.floor(Date.now() / 1000);
+    if (now - payload['2fa_verified_at'] > STEP_UP_WINDOW_MINUTES * 60) {
+      throw new UnauthorizedException({
+        requiresStepUp: true,
+        message: 'Step-up verification has expired. Please re-verify.',
+        stepUpToken: this.generateStepUpChallenge(request.user?.userId),
+      });
+    }
+  }
+
+  private validateActionScope(context: ExecutionContext, payload: Record<string, any>): void {
+    if (!payload.action) return;
+
+    const routeAction = this.reflector.getAllAndOverride<string | undefined>(
+      ACTION_TYPE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    if (!routeAction) return;
+
+    if (payload.action !== routeAction) {
+      throw new ForbiddenException(
+        `Step-up token scoped to "${payload.action}" but this endpoint requires "${routeAction}"`,
+      );
+    }
   }
 
   private tryVerifyStepUp(token: string): Record<string, any> | null {
