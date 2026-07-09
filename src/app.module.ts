@@ -9,6 +9,7 @@ import * as path from 'path';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { RedisModule } from './modules/redis/redis.module';
 import { JobsModule } from './modules/jobs/jobs.module';
 import { ApplicationsModule } from './modules/applications/applications.module';
 import { ScreeningModule } from './modules/screening/screening.module';
