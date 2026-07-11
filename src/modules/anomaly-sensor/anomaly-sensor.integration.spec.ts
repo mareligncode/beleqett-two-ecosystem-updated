@@ -12,16 +12,16 @@ describe('AnomalySensor Integration (e2e)', () => {
   let prismaService: PrismaService;
 
   beforeAll(async () => {
-    // Mock Prisma Service
+    // Mock Prisma Service with currency-aware responses
     const mockPrismaService = {
       eventLog: {
         create: jest.fn().mockResolvedValue({}),
       },
       escrowTransaction: {
         findMany: jest.fn().mockResolvedValue([
-          { grossAmount: 100 },
-          { grossAmount: 150 },
-          { grossAmount: 120 },
+          { grossAmount: 100, currency: 'ETB' },
+          { grossAmount: 150, currency: 'ETB' },
+          { grossAmount: 120, currency: 'ETB' },
         ]),
       },
     };
@@ -81,19 +81,67 @@ describe('AnomalySensor Integration (e2e)', () => {
     );
   });
 
-  it('should successfully receive payment.escrow.initiated and process multi-currency Z-score', async () => {
-    const clientId = 'integration-client-123';
-    
-    // Emit event with large amount
-    eventEmitter.emit('payment.escrow.initiated', {
-      escrowId: 'new-tx',
-      clientId,
-      grossAmount: 5000,
-      currency: 'USD',
+  it('should clear failure counter on auth.login.success and prevent false positives', async () => {
+    const email = 'false_positive_test@beleqet.com';
+
+    // Reset mock call counts
+    (prismaService.eventLog.create as jest.Mock).mockClear();
+
+    // Fire 5 failed logins (just under threshold)
+    for (let i = 0; i < 5; i++) {
+      eventEmitter.emit('auth.login.failed', {
+        email,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // User successfully logs in - should reset counter
+    eventEmitter.emit('auth.login.success', {
+      email,
+      timestamp: new Date().toISOString()
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // One more failure after success should NOT trigger alert
+    eventEmitter.emit('auth.login.failed', {
+      email,
       timestamp: new Date().toISOString()
     });
 
     await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Verify no brute-force alert was dispatched for this email
+    const bruteForceCallsForEmail = (prismaService.eventLog.create as jest.Mock).mock.calls.filter(
+      (call) => call[0]?.data?.entityId === email && call[0]?.data?.payload?.type === 'AUTH_BRUTE_FORCE'
+    );
+    expect(bruteForceCallsForEmail.length).toBe(0);
+  });
+
+  it('should successfully receive payment.escrow.initiated and process same-currency Z-score', async () => {
+    const clientId = 'integration-client-123';
+    
+    // Emit event with large amount in ETB (matches mock history currency)
+    eventEmitter.emit('payment.escrow.initiated', {
+      escrowId: 'new-tx',
+      clientId,
+      grossAmount: 5000,
+      currency: 'ETB',
+      timestamp: new Date().toISOString()
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Verify the Prisma query included the currency filter
+    expect(prismaService.escrowTransaction.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          currency: 'ETB',
+        }),
+      })
+    );
 
     // Verify it was logged
     expect(prismaService.eventLog.create).toHaveBeenCalledWith(
